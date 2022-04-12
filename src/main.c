@@ -64,6 +64,14 @@ int getParity(struct smallBlock block) {
     return parity;
 }
 
+int getTotalParity(struct smallBlock block) {
+    int totalParity = 0;
+    for (int i=0;i<16;i++) {
+        (getBit(block.bits, i)) ? totalParity ^=1 : 0;
+    }
+    return (totalParity);
+}
+
 
 void hammingEncodeFast(byte message[], struct smallBlock blocks[]) {
     double numDataBits = (sizeof(byte) * 8 * strlen(message));
@@ -90,9 +98,15 @@ void hammingEncodeFast(byte message[], struct smallBlock blocks[]) {
         (getBit(parity, 2)) ? flipBit(&blocks[i].bits, 4) : 0; // set parity bit of third group (odd rows)
         (getBit(parity, 3)) ? flipBit(&blocks[i].bits, 8) : 0; // set parity bit of fourth group (bottom half)
         // Parity should now be zero.
+        /// Calculate total parity - This is used for detecting if there are multiple errors.
+        int totalParity = getTotalParity(blocks[i]);
+        (getBit(totalParity, 0)) ? flipBit(&blocks[i].bits, 0) : 0; // set total parity bit (at index 0)
+
     }
 
-    printf("%d\n", getParity(blocks[0]));
+
+
+
 }
 
 int main() {
@@ -111,11 +125,12 @@ int main() {
     blockDisplayBin(blocks[1]);
     blockDisplayBin(blocks[2]);
     blockDisplayBin(blocks[3]);
-    //flipBit(&(blocks[0].bits), 0);
-    printf("%d, %d, %d, %d\n", getParity(blocks[0]),
-           getParity(blocks[1]),
-           getParity(blocks[2]),
-           getParity(blocks[3]));
+    //flipBit(&(blocks[0].bits), 5);
+    printf("%d, %d, %d, %d\n", getTotalParity(blocks[0]),
+           getTotalParity(blocks[1]),
+           getTotalParity(blocks[2]),
+           getTotalParity(blocks[3]));
+
 
 
 
