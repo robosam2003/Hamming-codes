@@ -2,15 +2,20 @@
 // C23
 // TODO: Proper header file
 
-// - Input message
-// - determine message size
-// - split into small blocks (16 bits)
-// -
-// - display the message in binary to the screen.
-
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
+
+/// Colour codes for text.
+#define blackText "\033[0;30m"
+#define redText "\033[0;31m"
+#define greenText "\033[0;32m"
+#define yellowText "\033[0;33m"
+#define blueText "\033[0;34m"
+#define magentaText "\033[0;35m"
+#define cyanText "\033[0;36m"
+#define whiteText "\033[0;37m"
+#define resetText "\033[0m"
 
 typedef char byte; // 8 bits is a byte
 
@@ -72,10 +77,8 @@ int getTotalParity(struct smallBlock block) {
     return (totalParity);
 }
 
-
 void hammingEncodeFast(byte message[], struct smallBlock blocks[]) {
     double numDataBits = (sizeof(byte) * 8 * strlen(message));
-
     /// Input Data into correct positions in blocks
     byte dataPositions[11] = {3, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15};
     int counter = 0;
@@ -101,37 +104,27 @@ void hammingEncodeFast(byte message[], struct smallBlock blocks[]) {
         /// Calculate total parity - This is used for detecting if there are multiple errors.
         int totalParity = getTotalParity(blocks[i]);
         (getBit(totalParity, 0)) ? flipBit(&blocks[i].bits, 0) : 0; // set total parity bit (at index 0)
-
     }
 
+}
 
-
+void openingSequence() {
+    // print the hammingCodesTitleAscii.txt to screen
+    FILE* fp = fopen("hammingCodesTitleAscii.txt", "r");
+    if (fp == NULL) {
+        printf("Error opening file - File is not in current workspace\n");
+    }
+    char c;
+    while ((c = fgetc(fp)) != EOF) {
+        printf("%c", c);
+    }
 
 }
 
 int main() {
-
-
-    byte message[1024] = "samyak";
-
-    //printf("Please enter the string to be encoded using Hamming code\n");
-    unsigned long numBits = (sizeof(byte)*8*strlen(message));
-    int numBlocks = calcNumOfBlocks(message);
-    struct smallBlock blocks[numBlocks];
-
-    hammingEncodeFast(message, blocks);
-
-    blockDisplayBin(blocks[0]);
-    blockDisplayBin(blocks[1]);
-    blockDisplayBin(blocks[2]);
-    blockDisplayBin(blocks[3]);
-    //flipBit(&(blocks[0].bits), 5);
-    printf("%d, %d, %d, %d\n", getTotalParity(blocks[0]),
-           getTotalParity(blocks[1]),
-           getTotalParity(blocks[2]),
-           getTotalParity(blocks[3]));
-
-
-
+    openingSequence();
+    printf("\033[0;31m");
+    printf("Hello\n");
+    printf("\033[0m");
 
 }

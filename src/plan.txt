@@ -1,0 +1,7 @@
+- Opening sequence, instructions etc
+- Options:
+    - Fast encoding/decoding (not showing anything)
+    - Walk through of what is happening during encoding/decoding process using simple text/text file
+    - Ability to import other files (e.g. .txt, jpg, png, etc) ???
+    - Ability to save the result as a .txt file
+- Closing sequence, instructions etc
