@@ -5,9 +5,11 @@
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
+#include <time.h>
+#include <stdlib.h>
 
 /// Colour codes for text.
-#define blackText "\033[0;30m"
+/*#define blackText "\033[0;30m"
 #define redText "\033[0;31m"
 #define greenText "\033[0;32m"
 #define yellowText "\033[0;33m"
@@ -16,11 +18,12 @@
 #define cyanText "\033[0;36m"
 #define whiteText "\033[0;37m"
 #define resetText "\033[0m"
-#define boldText "\033[1m"
+#define boldText "\033[1m"*/
 
-#define MAX_MESSAGE_LENGTH 256
+#define MAX_MESSAGE_LENGTH 25*1024*1024
 
 typedef char byte; // 8 bits is a byte
+
 
 byte getBit(short bits, int bitIndex) {
     return (bits & (1 << (bitIndex))) ? 1 : 0;
@@ -42,14 +45,18 @@ struct smallBlock {
     int blockNo; // Used for ordering the blocks after transmission.
 };
 
-
 /// Prototypes
-int calcNumOfBlocks(byte data[]);
-void blockDisplayBin (struct smallBlock message);
-void hammingEncodeFast(byte message[], struct smallBlock blocks[]);
 
-int calcNumOfBlocks(byte data[MAX_MESSAGE_LENGTH]) {
-    unsigned long long numDataBits = (1*8*strlen(data));
+
+
+int calcNumOfBlocks(byte data[], int numBytes) {
+    unsigned long long numDataBits;
+    if (!numBytes) {
+        numDataBits = (1*8*strlen(data));
+    }
+    else {
+        numDataBits = (1*8*numBytes);
+    }
     double temp = numDataBits/11;
     int numBlocks = ceil(temp);
     return numBlocks;
@@ -100,8 +107,15 @@ int getTotalParity(struct smallBlock block) {
     return (totalParity);
 }
 
-void hammingEncodeFast(byte message[], struct smallBlock blocks[]) {
-    double numDataBits = (double)(sizeof(byte) * 8 * strlen(message));
+void hammingEncodeFast(byte message[], struct smallBlock blocks[], int numBytes) { // input zero if the input is a string and you don't know the number of bytes.
+    double numDataBits;
+    if (!numBytes) {
+        numDataBits = (double)(sizeof(byte) * 8 * strlen(message));
+    }
+    else {
+        numDataBits = (double)(sizeof(byte) * 8 * numBytes);
+    }
+
     /// Input Data into correct positions in blocks
     byte dataPositions[11] = {3, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15};
     int counter = 0;
@@ -131,13 +145,25 @@ void hammingEncodeFast(byte message[], struct smallBlock blocks[]) {
 
 }
 
+void writeBlocksToFile(struct smallBlock blocks[], int numBlocks, char * fileName) {
+    int unixTime = time(NULL); // Unix time in seconds
+    // By using the unix time as a file name, each file name will be unique each time the program is run
+    sprintf(fileName, "HammingFile%d.txt", unixTime);
+    FILE* fp = fopen(fileName, "wb");
+    if (fp == NULL) {
+        printf("Error opening file!\n");
+    }
+    for (int i=0;i<numBlocks;i++) {
+        fprintf(fp, "%d\n", blocks[i].bits);
+    }
+    fclose(fp);
+    printf("Encoded message blocks written to %s\n", fileName);
+}
+
 int openingSequence() {
     // print the hammingCodesTitleAscii.txt to screen
 
     FILE* fp = fopen("hammingCodesTitleAscii.txt", "r");
-
-
-
     if (fp == NULL) {
         printf("Error opening file - File is not in current workspace\n");
     }
@@ -148,11 +174,8 @@ int openingSequence() {
     fclose(fp);
 
     /// print the opening instructions
-    printf(boldText);
-    //printf(redText);
     printf("\nThis is an program to demonstrate how Hamming Codes can be used to encode data and make it resilient to errors - a self-correcting message\n");
     printf("This is a common problem in data transmission and storage, and similar systems are used today.\n\n");
-    printf(resetText);
 
     printf("The capabilities of this program are:\n");
     printf("\t1.Walk through the process of encoding and decoding data using Hamming codes, for educational purposes (recommended for first try)\n");
@@ -171,56 +194,93 @@ int openingSequence() {
     return option;
 }
 
+int findFileSize(FILE* fp) {
+    fseek(fp, 0L, SEEK_END); // seek to end of file
+    int size = ftell(fp); // find counter position
+    fseek(fp, 0L, SEEK_SET); // seek back to beginning of file to put pointer back in place
+    return size;
+}
+
 void option1() {
     // educational walk through of encoding and decoding data using Hamming Codes
 }
+
 void option2() {
-    printf(boldText);
+    // Quickly encode and decode text using Hamming Codes. Interlacing blocks is used for resilience against burst errors
+    // TODO: Implement interlacing blocks to make the code resilient to burst errors
     printf("\nENCODING TEXT\n");
-    printf(resetText);
     printf("Would you like to encode a message you input or a file?: (1,2)\n");
     int messageOrFile = 0;
     while (!(messageOrFile == 1 || messageOrFile == 2)) {
         scanf("%d", &messageOrFile);
         (!(messageOrFile >= 1 && messageOrFile <= 2)) ? printf("Not a valid option!\nPlease select an option in the range: (1,2)\n"): 0;
     }
-    if (messageOrFile == 1) {
+
+    static byte message[MAX_MESSAGE_LENGTH]; // 25 MiBi of memory // Must be declared static, otherwise theres a segmentation fault
+    int numBytes = 0;
+    if (messageOrFile==1) {
         // getting user input
         printf("Please enter the message you would like to encode: (Max length is %d characters)\n", MAX_MESSAGE_LENGTH);
-        byte message[MAX_MESSAGE_LENGTH];
-
-
         getchar(); // get rid of newline character
-        gets(message); // TODO: Check if the message is too lo1ng
+        gets(message);
 
         printf("message is %d characters long\n", strlen(message));
-        // encoding the message
-        int numBlocks = calcNumOfBlocks(message);
-        printf("NUMBER OF BLOCKS: %d\n", numBlocks);
-        struct smallBlock blocks[numBlocks];
-        hammingEncodeFast(message, blocks);
-
-        if (numBlocks<=10) {
-            // displaying the encoded message in binary#
-            printf("ENCODED MESSAGE:\n");
-            blockDisplayMultipleBin(blocks, numBlocks);
+    }
+    else {
+        printf("Please enter the name of the file you would like to encode ( with file extension e.g. .txt) \n");
+        char fileName[100];
+        scanf("%s", fileName);
+        FILE* fp = fopen(fileName, "rb");
+        if (fp == NULL) {
+            printf("Error opening file! - Does not exist\n");
+            return; // back to main()
         }
+        int fileSize = findFileSize(fp);
+        printf("File size is %d bytes\n", fileSize);
+        if (fileSize > MAX_MESSAGE_LENGTH) {
+            printf("File is too large!\n");
+            return; // back to main()
+        }
+        numBytes = fileSize;
+        fread(message, sizeof(byte), numBytes, fp);
+        fclose(fp);
     }
-    else if (messageOrFile == 2){
-        // TODO: Implement file reading and encoding
+
+    // encoding the message
+    int numBlocks = calcNumOfBlocks(message, numBytes);
+    printf("NUMBER OF BLOCKS: %d\n", numBlocks);
+
+    struct smallBlock* blocks;
+    blocks = (struct smallBlock*) malloc(numBlocks * sizeof(struct smallBlock)); // have to use malloc() because cannot declare an array of structs that is that large
+    printf("FLAG\n");
+
+    hammingEncodeFast(message, blocks, numBytes);
+
+
+    if (numBlocks<=10) {
+        // displaying the encoded message in binary
+        printf("ENCODED MESSAGE:\n");
+        blockDisplayMultipleBin(blocks, numBlocks);
     }
+    char filename[100];
+    writeBlocksToFile(blocks, numBlocks, filename);
+
+    free(blocks); // Important to free memory allocated with malloc()
+
+
+
 }
 
 
-
 int main() {
+
     int option = openingSequence();
     switch (option) {
         case 1:
             option1();
             break;
         case 2:
-
+            option2();
             break;
         case 3:
 
