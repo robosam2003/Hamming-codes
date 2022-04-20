@@ -20,10 +20,18 @@
 #define resetText "\033[0m"
 #define boldText "\033[1m"*/
 
-#define MAX_MESSAGE_LENGTH 25*1024*1024
+#define MAX_MESSAGE_SIZE 25*1024*1024 // 25 MiB of memory
 
-typedef char byte; // 8 bits is a byte
+typedef char byte; // makes the code easier to read
 
+struct smallBlock {
+    short bits;
+    int blockNo; // Used for ordering the blocks after transmission.
+};
+
+/// Prototypes
+// TODO: ADD prototypes at end
+int findFileSize(FILE* fp);
 
 byte getBit(short bits, int bitIndex) {
     return (bits & (1 << (bitIndex))) ? 1 : 0;
@@ -39,14 +47,6 @@ void setBit(short *bits, int bitIndex, int val) {
 void flipBit(short *bits, int bitIndex) {
     (*bits & (1 << (bitIndex))) ? (*bits &= ~(1 << (bitIndex))) : (*bits |= (1 << (bitIndex)));
 }
-
-struct smallBlock {
-    short bits;
-    int blockNo; // Used for ordering the blocks after transmission.
-};
-
-/// Prototypes
-
 
 
 int calcNumOfBlocks(byte data[], int numBytes) {
@@ -75,17 +75,7 @@ void blockDisplayBin (struct smallBlock block) {
 
 void blockDisplayMultipleBin (struct smallBlock blocks[], int numBlocks) {
     for (int k=0; k<numBlocks;k++) {
-        int powersOf2 = {1,2,4,8};
-        printf("\nBlock No: %d\n", blocks[k].blockNo);
-        for (int i = 0; i < 4; i++) { // rows
-            for (int j = 0; j < 4; j++) { // columns
-//                (((i * 4) + j) == 1 | ((i * 4) + j) == 2 | ((i * 4) + j) == 4 | ((i * 4) + j) == 8) ? printf(yellowText) : printf(resetText);
-//                ((i+j) == 0) ? printf(redText) : 0; // TODO: Uncomment in codeblocks
-                byte bit = getBit(blocks[k].bits, (i * 4) + j);
-                printf("%d   ", bit);
-            }
-            printf("\n");
-        }
+        blockDisplayBin(blocks[k]);
     }
 }
 
@@ -160,6 +150,34 @@ void writeBlocksToFile(struct smallBlock blocks[], int numBlocks, char * fileNam
     printf("Encoded message blocks written to %s\n", fileName);
 }
 
+void introduceError(int length, int numBlocks, char filename[], int bitIndex) { // the file is a txt file, so all data is in 8 bit chunks
+    FILE* fp = fopen(filename, "r");
+    if (fp == NULL) {
+        printf("Error opening file!\n");
+    }
+    if (!(bitIndex)){ // int
+        int numBits = findFileSize(fp)*8;
+        // generate a random number
+        bitIndex = rand() * (numBits/RAND_MAX); // RAND_MAX is 32767
+        if (bitIndex >= numBits-length) {
+            bitIndex = numBits-length;
+        }
+    }
+
+
+    for (int i=0;i<length;i++) {
+        (!fseek(fp, (bitIndex+i)/8, SEEK_SET)) ? printf("Error!") : 0;
+        byte eightBits = fgetc(fp);
+        flipBit((short *) &eightBits, (bitIndex+i) % 8);
+        fputc(eightBits, fp);
+    }
+
+    fclose(fp);
+
+
+
+}
+
 int openingSequence() {
     // print the hammingCodesTitleAscii.txt to screen
 
@@ -203,12 +221,14 @@ int findFileSize(FILE* fp) {
 
 void option1() {
     // educational walk through of encoding and decoding data using Hamming Codes
+    // TODO: get coloured output working for the educational walk through
 }
 
 void option2() {
     // Quickly encode and decode text using Hamming Codes. Interlacing blocks is used for resilience against burst errors
-    // TODO: Implement interlacing blocks to make the code resilient to burst errors
+    // TODO: Implement interlacing blocks to make the code resilient to burst errors????
     printf("\nENCODING TEXT\n");
+// 2.1 Quickly encode text data and save the encoded data
     printf("Would you like to encode a message you input or a file?: (1,2)\n");
     int messageOrFile = 0;
     while (!(messageOrFile == 1 || messageOrFile == 2)) {
@@ -216,11 +236,11 @@ void option2() {
         (!(messageOrFile >= 1 && messageOrFile <= 2)) ? printf("Not a valid option!\nPlease select an option in the range: (1,2)\n"): 0;
     }
 
-    static byte message[MAX_MESSAGE_LENGTH]; // 25 MiBi of memory // Must be declared static, otherwise theres a segmentation fault
+    static byte message[MAX_MESSAGE_SIZE]; // Must be declared static, otherwise theres a segmentation fault
     int numBytes = 0;
     if (messageOrFile==1) {
         // getting user input
-        printf("Please enter the message you would like to encode: (Max length is %d characters)\n", MAX_MESSAGE_LENGTH);
+        printf("Please enter the message you would like to encode: (Max length is %d characters)\n", MAX_MESSAGE_SIZE);
         getchar(); // get rid of newline character
         gets(message);
 
@@ -237,7 +257,7 @@ void option2() {
         }
         int fileSize = findFileSize(fp);
         printf("File size is %d bytes\n", fileSize);
-        if (fileSize > MAX_MESSAGE_LENGTH) {
+        if (fileSize > MAX_MESSAGE_SIZE) {
             printf("File is too large!\n");
             return; // back to main()
         }
@@ -251,26 +271,23 @@ void option2() {
     printf("NUMBER OF BLOCKS: %d\n", numBlocks);
 
     struct smallBlock* blocks;
-    blocks = (struct smallBlock*) malloc(numBlocks * sizeof(struct smallBlock)); // have to use malloc() because cannot declare an array of structs that is that large
+    blocks = (struct smallBlock*) malloc(numBlocks * sizeof(struct smallBlock)); /// have to use malloc() because cannot declare an array of structs that is that large
     printf("FLAG\n");
-
     hammingEncodeFast(message, blocks, numBytes);
-
-
     if (numBlocks<=10) {
-        // displaying the encoded message in binary
+        // displaying the encoded message in binary if there is less than 10 blocks
         printf("ENCODED MESSAGE:\n");
         blockDisplayMultipleBin(blocks, numBlocks);
     }
     char filename[100];
     writeBlocksToFile(blocks, numBlocks, filename);
-
-    free(blocks); // Important to free memory allocated with malloc()
-
-
-
+    free(blocks); /// Important to free memory allocated with malloc()
+// --------------------------------------------------------------------
+// 2.2 Introduce a single or burst error to the encoded data to simulate bit flips in an actual transmission / storage system.
+    // has to be of length 1 while we dont have interlacing blocks
+    introduceError(1, numBlocks, filename, 25); // TODO: THIS SHOULD BE WITH BLOCKS NOT FILES
+// 2.3 Quickly detect and correct errors in data and decode it
 }
-
 
 int main() {
 
@@ -281,15 +298,6 @@ int main() {
             break;
         case 2:
             option2();
-            break;
-        case 3:
-
-            break;
-        case 4:
-
-            break;
-        default:
-            printf("Error - invalid option\n");
             break;
     }
     while (1); // TODO implement a repeat option and exit option.
