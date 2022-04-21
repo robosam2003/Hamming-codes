@@ -33,6 +33,7 @@ struct smallBlock {
 // TODO: ADD prototypes at end
 int findFileSize(FILE* fp);
 
+
 byte getBit(short bits, int bitIndex) {
     return (bits & (1 << (bitIndex))) ? 1 : 0;
 }
@@ -48,6 +49,13 @@ void flipBit(short *bits, int bitIndex) {
     (*bits & (1 << (bitIndex))) ? (*bits &= ~(1 << (bitIndex))) : (*bits |= (1 << (bitIndex)));
 }
 
+byte getLowByte(short bits) {
+    return (byte) bits;
+}
+
+byte getHighByte(short bits) {
+    return (byte) (bits >> 8);
+}
 
 int calcNumOfBlocks(byte data[], int numBytes) {
     unsigned long long numDataBits;
@@ -135,46 +143,75 @@ void hammingEncodeFast(byte message[], struct smallBlock blocks[], int numBytes)
 
 }
 
-void writeBlocksToFile(struct smallBlock blocks[], int numBlocks, char * fileName) {
+void writeBlocksToFileAndInterlace(struct smallBlock blocks[], int numBlocks, char * fileName) {
     int unixTime = time(NULL); // Unix time in seconds
     // By using the unix time as a file name, each file name will be unique each time the program is run
-    sprintf(fileName, "HammingFile%d.txt", unixTime);
+    sprintf(fileName, "HammingFile%d.bin", unixTime);
     FILE* fp = fopen(fileName, "wb");
     if (fp == NULL) {
         printf("Error opening file!\n");
     }
+
+
+
+
+    // --------------------------------------------------
     for (int i=0;i<numBlocks;i++) {
-        fprintf(fp, "%d\n", blocks[i].bits);
+
+        byte lowByte = blocks[i].bits & 0x00FF;
+        byte highByte = (blocks[i].bits & 0xFF00) >> 8;
+
+        fwrite(&highByte, sizeof(byte), 1, fp);
+        fwrite(&lowByte, sizeof(byte), 1, fp);
+
+
     }
+    fflush(fp);
     fclose(fp);
     printf("Encoded message blocks written to %s\n", fileName);
 }
 
-void introduceError(int length, int numBlocks, char filename[], int bitIndex) { // the file is a txt file, so all data is in 8 bit chunks
-    FILE* fp = fopen(filename, "r");
+void introduceError(int length, char filename[], int bitIndex) { // the file is a txt file, so all data is in 8 bit chunks
+    printf("Filename: %s\n", filename);
+    FILE* fp = fopen(filename, "r+");
     if (fp == NULL) {
         printf("Error opening file!\n");
     }
-    if (!(bitIndex)){ // int
-        int numBits = findFileSize(fp)*8;
-        // generate a random number
-        bitIndex = rand() * (numBits/RAND_MAX); // RAND_MAX is 32767
-        if (bitIndex >= numBits-length) {
-            bitIndex = numBits-length;
-        }
-    }
+//    if (!(bitIndex)){
+//        int numBits = findFileSize(fp)*8;
+//        // generate a random number
+//        bitIndex = rand() * (numBits/RAND_MAX); // RAND_MAX is 32767
+//        if (bitIndex >= numBits-length) {
+//            bitIndex = numBits-length;
+//        }
+//    }
 
 
+    int counter = 0;
+    fseek(fp, 0, SEEK_SET);
     for (int i=0;i<length;i++) {
-        (!fseek(fp, (bitIndex+i)/8, SEEK_SET)) ? printf("Error!") : 0;
-        byte eightBits = fgetc(fp);
-        flipBit((short *) &eightBits, (bitIndex+i) % 8);
-        fputc(eightBits, fp);
+        (fseek(fp, 2 * ((bitIndex+i) / 16), SEEK_CUR)) ? printf("Error seeking to index!\n") : 0;
+        short sixteenBits = 0;
+        printf("%d\n", ftell(fp));
+        int numShortsRead = fread(&sixteenBits, sizeof(short), 1, fp);
+        printf("%d\n", sixteenBits);
+        printf("%d\n", ftell(fp));
+        (fseek(fp, (bitIndex+i) / 16, SEEK_CUR - numShortsRead)) ? printf("Error seeking to index!\n"): 0; // seek back to position
+        printf("%d\n", ftell(fp));
+
+        flipBit(&sixteenBits, (bitIndex+i) % 16);
+        int numShortsWritten = fwrite(&sixteenBits, sizeof(sixteenBits), 1, fp);
+        printf("num shorts written: %d\n", numShortsWritten);
+        printf("%d\n", ftell(fp));
+        (fseek(fp, (bitIndex+i) / 16, SEEK_CUR - numShortsWritten)) ? printf("Error seeking to index!\n") : 0; // seek back to position
+        printf("%d\n", ftell(fp));
+
+        fread(&sixteenBits, sizeof(sixteenBits), 1, fp);
+        (fseek(fp, (bitIndex+i) / 16, SEEK_CUR - numShortsRead)) ? printf("Error seeking to index!\n") : 0;
+
+        printf("NOW: %d\n", sixteenBits);
     }
-
     fclose(fp);
-
-
 
 }
 
@@ -226,7 +263,6 @@ void option1() {
 
 void option2() {
     // Quickly encode and decode text using Hamming Codes. Interlacing blocks is used for resilience against burst errors
-    // TODO: Implement interlacing blocks to make the code resilient to burst errors????
     printf("\nENCODING TEXT\n");
 // 2.1 Quickly encode text data and save the encoded data
     printf("Would you like to encode a message you input or a file?: (1,2)\n");
@@ -280,13 +316,16 @@ void option2() {
         blockDisplayMultipleBin(blocks, numBlocks);
     }
     char filename[100];
-    writeBlocksToFile(blocks, numBlocks, filename);
+    printf("FLAG2\n");
+    writeBlocksToFileAndInterlace(blocks, numBlocks, filename); // generates the filename, interlaces the blocks and saves to file
     free(blocks); /// Important to free memory allocated with malloc()
+    printf("FLAG3\n");
 // --------------------------------------------------------------------
 // 2.2 Introduce a single or burst error to the encoded data to simulate bit flips in an actual transmission / storage system.
     // has to be of length 1 while we dont have interlacing blocks
-    introduceError(1, numBlocks, filename, 25); // TODO: THIS SHOULD BE WITH BLOCKS NOT FILES
+    introduceError(8, filename, 0);
 // 2.3 Quickly detect and correct errors in data and decode it
+
 }
 
 int main() {
