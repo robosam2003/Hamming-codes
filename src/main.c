@@ -51,15 +51,16 @@ void flipBit(short *bits, int bitIndex) {
     (*bits & (1 << (bitIndex))) ? (*bits &= ~(1 << (bitIndex))) : (*bits |= (1 << (bitIndex)));
 }
 
+
 int calcNumOfBlocks(byte data[], int numBytes) {
-    unsigned long long numDataBits;
+    unsigned long long numDataBits=0;
     if (!numBytes) {
         numDataBits = (1*8*strlen(data));
     }
     else {
         numDataBits = (1*8*numBytes);
     }
-    double temp = numDataBits/11;
+    double temp = ((double)numDataBits)/11;
     int numBlocks = ceil(temp);
     return numBlocks;
 }
@@ -90,6 +91,23 @@ int getParity(struct smallBlock block) {
     }
     return parity;
 }
+
+// Assumes little endian
+void printBits(size_t const size, void const * const ptr)
+{
+    unsigned char *b = (unsigned char*) ptr;
+    unsigned char byte;
+    int i, j;
+
+    for (i = size-1; i >= 0; i--) {
+        for (j = 7; j >= 0; j--) {
+            byte = (b[i] >> j) & 1;
+            printf("%u", byte);
+        }
+    }
+    puts("");
+}
+
 
 int getTotalParity(struct smallBlock block) {
     int totalParity = 0;
@@ -148,6 +166,7 @@ void hammingDecodeFast(char filename[]) {
     struct smallBlock blocks[numBlocks];
     // delace the bits from the file and write them to the blocks
     readBlocksFromFileAndDelace(blocks, numBlocks, filename);
+    int numErrors = 0;
     // find errors in the blocks and decode them.
     for (int i=0;i<numBlocks;i++) {
         struct smallBlock currentBlock = blocks[ blocks[i].blockNo ];
@@ -157,15 +176,19 @@ void hammingDecodeFast(char filename[]) {
             if (getTotalParity(currentBlock) == 0) {  // if the parity of the whole block is even, then two bits got flipped in a single block.
                 // Note, cases with 3 or more errors per block is not covered by hamming codes
                 printf("There is two errors in block %d - cannot correct for them both\n", currentBlock.blockNo);
+                numErrors += 2;
             }
             else {
                 printf("1 error found in block %d, in position %d\n", currentBlock.blockNo, currentBlockParity);
                 printf("Correcting error...\n");
                 flipBit(&currentBlock.bits, currentBlockParity);
                 printf("Error bit corrected! Parity of block is now %d\n", getParity(currentBlock));
-
+                numErrors++;
             }
         }
+    }
+    if (numErrors == 0) {
+        printf("\nThere are no errrors!!1\n");
     }
     fclose(fp);
 }
@@ -173,7 +196,7 @@ void hammingDecodeFast(char filename[]) {
 void writeBlocksToFileAndInterlace(struct smallBlock blocks[], int numBlocks, char * fileName) {
     int unixTime = time(NULL); // Unix time in seconds
     // By using the unix time as a file name, each file name will be unique each time the program is run
-    sprintf(fileName, "HammingFile%d.bin", unixTime);
+    sprintf(fileName, "HammingFile%d.hex", unixTime);
     FILE* fp = fopen(fileName, "wb");
     if (fp == NULL) {
         printf("Error opening file!\n");
@@ -183,26 +206,35 @@ void writeBlocksToFileAndInterlace(struct smallBlock blocks[], int numBlocks, ch
 
     short interlacedBits = 0;
 
-    printf("%d\n", numBlocks*8*sizeof(short));
+    printf("numbits: %d\n", numBlocks*8*sizeof(short));
 
 
-    for (int i=0; i<numBlocks*8*sizeof(short); i++) { // THIS IS CORRECT
+    for (int i=0; i<numBlocks*8*sizeof(short); i++) {
+        byte currentBit = getBit( blocks[i%numBlocks].bits,
+                                  (i/numBlocks));
         setBit( &interlacedBits,
-                15-(i%16), // MSB first
-                getBit( blocks[i%numBlocks].bits, 15-(i/numBlocks) )  ); // interlacing the bits // MSB first
+                15-(i%16),
+                currentBit ); // interlacing the bits // MSB first
         if ((i+1)%16 == 0 ) { // has to be (i+1)%16 so that it writes at the correct time, i.e, i is one less than a multiple of 16
+            printBits(2, &interlacedBits);
             byte highByte = (byte)(interlacedBits >> 8);
             byte lowByte = (byte)(interlacedBits & 0xFF);
             //fwrite(&interlacedBits, sizeof(short), 1, fp);
-            putc(highByte, fp);
+
+
             putc(lowByte, fp);
+            putc(highByte, fp);
+
+
+
             interlacedBits = 0;
         }
     }
-
     fclose(fp);
     printf("Encoded message blocks written to %s\n", fileName);
 }
+
+
 
 void readBlocksFromFileAndDelace(struct smallBlock blocks[], int numBlocks, char* filename) {
     // delace the bits from the file and write them to the blocks
@@ -213,21 +245,24 @@ void readBlocksFromFileAndDelace(struct smallBlock blocks[], int numBlocks, char
     for (int j=0;j<numBlocks;j++) {
         blocks[j].blockNo = j;
     }
+    printf("filename from read and delace%s\n", filename);
     printf("numbits: %d\n", numBlocks*8* sizeof(short));
-
     short interlacedBits;
     for (int i=0; i<numBlocks*8*sizeof(short); i++) {
         if ((i%16) == 0) {
-            (fseek(fp, 2 * (i / 16), SEEK_SET)) ? printf("error seeking file")
-                                                : 0; // seek to the correct position in the file
-            fread(&interlacedBits, sizeof(short), 1, fp); // read the bits from the file
+            (fseek(fp, 2*(i/16), SEEK_SET)) ? printf("error seeking file") : 0; // seek to the correct position in the file
+            int a = fread(&interlacedBits, sizeof(short), 1, fp); // read the bits from the file
+            printf("\ninterlacedBits :"); // CORRECT
+            printBits(sizeof(short), &interlacedBits);
+            printf("\n");
+            //printf("interlacedBitsHighByte : %d\n", (byte)(interlacedBits >> 8));
+            //printf("interlacedBitsLowByte : %d\n", (byte)(interlacedBits & 0xFF));
         }
-
-        setBit(&blocks[ blocks[i % numBlocks].blockNo ].bits,
-               15 - (i / numBlocks), // MSB first
-               getBit(interlacedBits, 15 - (i / numBlocks))); // delacing the bits // MSB first
-        printf("%d\n", i);
-
+        byte currentBit = getBit(interlacedBits, 15-(i%16));
+        int b = (i / numBlocks);
+        setBit(&blocks[ i%numBlocks ].bits,
+               (i / numBlocks), // MSB first
+               currentBit); // delacing the bits // MSB first
     }
     fclose(fp);
 }
@@ -369,10 +404,10 @@ void option2() {
 
     printf("FLAG NUMBLOCKS is now %d\n", numBlocks);
 
-    hammingEncodeFast(message, blocks, numBytes);
-    // displaying the encoded message in binary if there is less than 10 blocks
+    hammingEncodeFast(message, blocks, numBytes); /// Correct!
+
     printf("ENCODED MESSAGE:\n");
-    blockDisplayMultipleBin(blocks, 10);
+    blockDisplayMultipleBin(blocks, numBlocks);
 
     char filename[100];
     printf("FLAG2\n");
@@ -381,7 +416,7 @@ void option2() {
     printf("FLAG3\n");
 // --------------------------------------------------------------------
 // 2.2 Introduce a single or burst error to the encoded data to simulate bit flips in an actual transmission / storage system.
-    introduceError(1, filename, 56);
+    introduceError(4, filename, 0); // TODO: FIX THIS - Unsure if its flipping the correct bits.
 // 2.3 Quickly detect and correct errors in data and decode it
     hammingDecodeFast(filename);
 }
