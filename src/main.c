@@ -26,12 +26,14 @@ typedef char byte; // makes the code easier to read
 
 struct smallBlock {
     short bits;
-    int blockNo; // Used for ordering the blocks after transmission.
+    int blockNo; // Although in _this_ application block numbers are not *strictly* needed (contiguous storage),
+                 //  they are needed for tasks like transmission, where blocks may arrive at different times (e.g. packet switching)
 };
 
 /// Prototypes
 // TODO: ADD prototypes at end
 int findFileSize(FILE* fp);
+void readBlocksFromFileAndDelace(struct smallBlock blocks[], int numBlocks, char* filename);
 
 
 byte getBit(short bits, int bitIndex) {
@@ -47,14 +49,6 @@ void setBit(short *bits, int bitIndex, int val) {
 
 void flipBit(short *bits, int bitIndex) {
     (*bits & (1 << (bitIndex))) ? (*bits &= ~(1 << (bitIndex))) : (*bits |= (1 << (bitIndex)));
-}
-
-byte getLowByte(short bits) {
-    return (byte) bits;
-}
-
-byte getHighByte(short bits) {
-    return (byte) (bits >> 8);
 }
 
 int calcNumOfBlocks(byte data[], int numBytes) {
@@ -143,6 +137,39 @@ void hammingEncodeFast(byte message[], struct smallBlock blocks[], int numBytes)
 
 }
 
+void hammingDecodeFast(char filename[]) {
+    FILE* fp = fopen(filename, "r");
+    if (fp == NULL) {
+        printf("Error opening file.\n");
+        return;
+    }
+    int numBlocks = findFileSize(fp)/sizeof(short); // only the bits were written to the file.
+    printf("NUMBLOCKS from decode %lu\n", numBlocks);
+    struct smallBlock blocks[numBlocks];
+    // delace the bits from the file and write them to the blocks
+    readBlocksFromFileAndDelace(blocks, numBlocks, filename);
+    // find errors in the blocks and decode them.
+    for (int i=0;i<numBlocks;i++) {
+        struct smallBlock currentBlock = blocks[ blocks[i].blockNo ];
+        int currentBlockParity = getParity(currentBlock);
+        blockDisplayBin(currentBlock);
+        if (getParity(currentBlock)) { // i.e. the total parity is not zero - there is an error
+            if (getTotalParity(currentBlock) == 0) {  // if the parity of the whole block is even, then two bits got flipped in a single block.
+                // Note, cases with 3 or more errors per block is not covered by hamming codes
+                printf("There is two errors in block %d - cannot correct for them both\n", currentBlock.blockNo);
+            }
+            else {
+                printf("1 error found in block %d, in position %d\n", currentBlock.blockNo, currentBlockParity);
+                printf("Correcting error...\n");
+                flipBit(&currentBlock.bits, currentBlockParity);
+                printf("Error bit corrected! Parity of block is now %d\n", getParity(currentBlock));
+
+            }
+        }
+    }
+    fclose(fp);
+}
+
 void writeBlocksToFileAndInterlace(struct smallBlock blocks[], int numBlocks, char * fileName) {
     int unixTime = time(NULL); // Unix time in seconds
     // By using the unix time as a file name, each file name will be unique each time the program is run
@@ -151,24 +178,58 @@ void writeBlocksToFileAndInterlace(struct smallBlock blocks[], int numBlocks, ch
     if (fp == NULL) {
         printf("Error opening file!\n");
     }
+    printf("GOT HERE, NUMBLOCKS %d\n", numBlocks);
 
 
+    short interlacedBits = 0;
+
+    printf("%d\n", numBlocks*8*sizeof(short));
 
 
-    // --------------------------------------------------
-    for (int i=0;i<numBlocks;i++) {
-
-        byte lowByte = blocks[i].bits & 0x00FF;
-        byte highByte = (blocks[i].bits & 0xFF00) >> 8;
-
-        fwrite(&highByte, sizeof(byte), 1, fp);
-        fwrite(&lowByte, sizeof(byte), 1, fp);
-
-
+    for (int i=0; i<numBlocks*8*sizeof(short); i++) { // THIS IS CORRECT
+        setBit( &interlacedBits,
+                15-(i%16), // MSB first
+                getBit( blocks[i%numBlocks].bits, 15-(i/numBlocks) )  ); // interlacing the bits // MSB first
+        if ((i+1)%16 == 0 ) { // has to be (i+1)%16 so that it writes at the correct time, i.e, i is one less than a multiple of 16
+            byte highByte = (byte)(interlacedBits >> 8);
+            byte lowByte = (byte)(interlacedBits & 0xFF);
+            //fwrite(&interlacedBits, sizeof(short), 1, fp);
+            putc(highByte, fp);
+            putc(lowByte, fp);
+            interlacedBits = 0;
+        }
     }
-    fflush(fp);
+
     fclose(fp);
     printf("Encoded message blocks written to %s\n", fileName);
+}
+
+void readBlocksFromFileAndDelace(struct smallBlock blocks[], int numBlocks, char* filename) {
+    // delace the bits from the file and write them to the blocks
+    FILE* fp = fopen(filename, "rb");
+    if (fp == NULL) {
+        printf("Error opening file!\n");
+    }
+    for (int j=0;j<numBlocks;j++) {
+        blocks[j].blockNo = j;
+    }
+    printf("numbits: %d\n", numBlocks*8* sizeof(short));
+
+    short interlacedBits;
+    for (int i=0; i<numBlocks*8*sizeof(short); i++) {
+        if ((i%16) == 0) {
+            (fseek(fp, 2 * (i / 16), SEEK_SET)) ? printf("error seeking file")
+                                                : 0; // seek to the correct position in the file
+            fread(&interlacedBits, sizeof(short), 1, fp); // read the bits from the file
+        }
+
+        setBit(&blocks[ blocks[i % numBlocks].blockNo ].bits,
+               15 - (i / numBlocks), // MSB first
+               getBit(interlacedBits, 15 - (i / numBlocks))); // delacing the bits // MSB first
+        printf("%d\n", i);
+
+    }
+    fclose(fp);
 }
 
 void introduceError(int length, char filename[], int bitIndex) { // the file is a txt file, so all data is in 8 bit chunks
@@ -192,24 +253,14 @@ void introduceError(int length, char filename[], int bitIndex) { // the file is 
     for (int i=0;i<length;i++) {
         (fseek(fp, 2 * ((bitIndex+i) / 16), SEEK_CUR)) ? printf("Error seeking to index!\n") : 0;
         short sixteenBits = 0;
-        printf("%d\n", ftell(fp));
         int numShortsRead = fread(&sixteenBits, sizeof(short), 1, fp);
-        printf("%d\n", sixteenBits);
-        printf("%d\n", ftell(fp));
         (fseek(fp, (bitIndex+i) / 16, SEEK_CUR - numShortsRead)) ? printf("Error seeking to index!\n"): 0; // seek back to position
-        printf("%d\n", ftell(fp));
-
         flipBit(&sixteenBits, (bitIndex+i) % 16);
         int numShortsWritten = fwrite(&sixteenBits, sizeof(sixteenBits), 1, fp);
-        printf("num shorts written: %d\n", numShortsWritten);
-        printf("%d\n", ftell(fp));
         (fseek(fp, (bitIndex+i) / 16, SEEK_CUR - numShortsWritten)) ? printf("Error seeking to index!\n") : 0; // seek back to position
-        printf("%d\n", ftell(fp));
 
         fread(&sixteenBits, sizeof(sixteenBits), 1, fp);
-        (fseek(fp, (bitIndex+i) / 16, SEEK_CUR - numShortsRead)) ? printf("Error seeking to index!\n") : 0;
-
-        printf("NOW: %d\n", sixteenBits);
+        (fseek(fp, (bitIndex+i) / 16, SEEK_CUR - numShortsRead)) ? printf("Error seeking to index!\n") : 0; // seek back to position
     }
     fclose(fp);
 
@@ -307,14 +358,22 @@ void option2() {
     printf("NUMBER OF BLOCKS: %d\n", numBlocks);
 
     struct smallBlock* blocks;
-    blocks = (struct smallBlock*) malloc(numBlocks * sizeof(struct smallBlock)); /// have to use malloc() because cannot declare an array of structs that is that large
-    printf("FLAG\n");
-    hammingEncodeFast(message, blocks, numBytes);
-    if (numBlocks<=10) {
-        // displaying the encoded message in binary if there is less than 10 blocks
-        printf("ENCODED MESSAGE:\n");
-        blockDisplayMultipleBin(blocks, numBlocks);
+    int wasOddNumBlocks = numBlocks % 2;
+    if (numBlocks%2){
+        numBlocks++;
+        // malloc can't initialise odd number of blocks?????????? - very weird behaviour
     }
+
+    blocks = (struct smallBlock*) malloc(numBlocks * sizeof(struct smallBlock)); /// have to use malloc() because cannot declare an array of structs that is that large
+    (wasOddNumBlocks) ? numBlocks-- : 0;  // we only set it to even so that malloc would work.
+
+    printf("FLAG NUMBLOCKS is now %d\n", numBlocks);
+
+    hammingEncodeFast(message, blocks, numBytes);
+    // displaying the encoded message in binary if there is less than 10 blocks
+    printf("ENCODED MESSAGE:\n");
+    blockDisplayMultipleBin(blocks, 10);
+
     char filename[100];
     printf("FLAG2\n");
     writeBlocksToFileAndInterlace(blocks, numBlocks, filename); // generates the filename, interlaces the blocks and saves to file
@@ -322,10 +381,9 @@ void option2() {
     printf("FLAG3\n");
 // --------------------------------------------------------------------
 // 2.2 Introduce a single or burst error to the encoded data to simulate bit flips in an actual transmission / storage system.
-    // has to be of length 1 while we dont have interlacing blocks
-    introduceError(8, filename, 0);
+    introduceError(1, filename, 56);
 // 2.3 Quickly detect and correct errors in data and decode it
-
+    hammingDecodeFast(filename);
 }
 
 int main() {
