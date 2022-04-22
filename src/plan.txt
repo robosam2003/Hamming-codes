@@ -6,4 +6,3 @@
     - Ability to import other files (e.g. .txt, jpg, png, etc) ???
     - Ability to save the result as a .txt file
 - Closing sequence, instructions etc
--15565
