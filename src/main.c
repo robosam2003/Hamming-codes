@@ -9,16 +9,7 @@
 #include <stdlib.h>
 
 /// Colour codes for text.
-/*#define blackText "\033[0;30m"
-#define redText "\033[0;31m"
-#define greenText "\033[0;32m"
-#define yellowText "\033[0;33m"
-#define blueText "\033[0;34m"
-#define magentaText "\033[0;35m"
-#define cyanText "\033[0;36m"
-#define whiteText "\033[0;37m"
-#define resetText "\033[0m"
-#define boldText "\033[1m"*/
+#include "colours.h" // for conciseness, I've put the colours in a header file.
 
 #define MAX_MESSAGE_SIZE 25*1024*1024 // 25 MiB of memory
 
@@ -28,6 +19,18 @@ struct smallBlock {
     short bits;
     int blockNo; // Although in _this_ application block numbers are not *strictly* needed (contiguous storage),
                  //  they are needed for tasks like transmission, where blocks may arrive at different times (e.g. packet switching)
+};
+
+enum blockDisplayStates { // makes the code easier to read, instead of using numbers
+    parityVsDataColoured,
+    dataColoured,
+    parityColoured,
+    totalParityColoured,
+    noColour,
+    parityGroup1Coloured, // odd or even columns
+    parityGroup2Coloured, // right or left half
+    parityGroup3Coloured, // odd or even rows
+    parityGroup4Coloured  // top or bottom half
 };
 
 /// Prototypes
@@ -64,20 +67,104 @@ int calcNumOfBlocks(byte data[], int numBytes) {
     return numBlocks;
 }
 
-void blockDisplayBin (struct smallBlock block) {
+void blockDisplayBin (struct smallBlock block, enum blockDisplayStates blockDisplayState) {
+    byte totalParityBitIndex = 0;
+    byte parityBitIndexes[5] = {0, 1, 2, 4, 8};
+    byte parityGroup1Indexes[8] = {1, 3, 5, 7, 9, 11, 13, 15};
+    byte parityGroup2Indexes[8] = {2, 3, 6, 7, 10, 11, 14, 15};
+    byte parityGroup3Indexes[8] = {4, 5, 6, 7, 12, 13, 14, 15};
+    byte parityGroup4Indexes[8] = {8, 9, 10, 11, 12, 13, 14, 15};
+
     printf("\nBlock No: %d\n", block.blockNo);
     for (int i=0;i<4;i++) { // rows
         for (int j=0;j<4;j++) { // columns
+            switch (blockDisplayState) {
+                case noColour:
+                    printf(reset);
+                    break;
+                case parityVsDataColoured:
+                    printf(reset);
+                    printf(BLUB);
+                    for (int a=0;a<5;a++) {
+                        if ((i * 4) + j == parityBitIndexes[a]) {
+                            printf(YELB);
+                        }
+                    }
+                    (( (i*4) + j ) == totalParityBitIndex) ? printf(REDB) : 0;
+                    break;
+                case dataColoured:
+                    printf(reset);
+                    printf(BLUB);
+                    for (int a=0;a<5;a++) {
+                        if ((i * 4) + j == parityBitIndexes[a]) {
+                            printf(BLKB BLK);
+                        }
+                    }
+                    (( (i*4) + j ) == totalParityBitIndex) ? printf(BLK) : 0;
+                    break;
+                case parityColoured:
+                    printf(reset);
+                    printf(BLK);
+                    for (int a=0;a<5;a++) {
+                        if ((i * 4) + j == parityBitIndexes[a]) {
+                            printf(YELB);
+                        }
+                    }
+                    (( (i*4) + j ) == totalParityBitIndex) ? printf(REDB) : 0;
+                    break;
+                case parityGroup1Coloured:
+                    printf(reset);
+                    for (int a=0;a<8;a++) {
+                        if ((i * 4) + j == parityGroup1Indexes[a]) {
+                            printf(MAGB);
+                        }
+                    }
+                    (( (i*4) + j ) == parityBitIndexes[1]) ? printf(GRNB) : 0;
+                    break;
+                case parityGroup2Coloured:
+                    printf(reset);
+                    for (int a=0;a<8;a++) {
+                        if ((i * 4) + j == parityGroup2Indexes[a]) {
+                            printf(MAGB);
+                        }
+                    }
+                    (( (i*4) + j ) == parityBitIndexes[2]) ? printf(GRNB) : 0;
+                    break;
+                case parityGroup3Coloured:
+                    printf(reset);
+                    for (int a=0;a<8;a++) {
+                        if ((i * 4) + j == parityGroup3Indexes[a]) {
+                            printf(MAGB);
+                        }
+                    }
+                    (( (i*4) + j ) == parityBitIndexes[3]) ? printf(GRNB) : 0;
+                    break;
+                case parityGroup4Coloured:
+                    printf(reset);
+                    for (int a=0;a<8;a++) {
+                        if ((i * 4) + j == parityGroup4Indexes[a]) {
+                            printf(MAGB);
+                        }
+                    }
+                    (( (i*4) + j ) == parityBitIndexes[4]) ? printf(GRNB) : 0;
+                    break;
+                case totalParityColoured:
+                    printf(reset);
+                    (( (i*4) + j ) == totalParityBitIndex) ? printf(GRNB) : 0;
+                    break;
+                default:
+                    break;
+            }
             byte bit = getBit(block.bits, (i*4)+j);
-            printf("%d   ", bit);
+            printf("%d  " reset, bit);
         }
-        printf("\n");
+        printf(BLK "_\n"reset);
     }
 }
 
-void blockDisplayMultipleBin (struct smallBlock blocks[], int numBlocks) {
+void blockDisplayMultipleBin (struct smallBlock blocks[], int numBlocks, enum blockDisplayStates blockDisplayState) {
     for (int k=0; k<numBlocks;k++) {
-        blockDisplayBin(blocks[k]);
+        blockDisplayBin(blocks[k], blockDisplayState);
     }
 }
 
@@ -156,38 +243,32 @@ void hammingDecodeFast(char hexFilename[], char originalFilename[]) {
 
     // delace the bits from the file and write them to the blocks
     readBlocksFromFileAndDelace(blocks, numBlocks, hexFilename);
-    int numErrors = 0;
+    int num1Errors = 0;
+    int num2Errors = 0;
     // find errors in the blocks and decode them.
     for (int i=0;i<numBlocks;i++) {
         struct smallBlock currentBlock = blocks[ blocks[i].blockNo ];
         int currentBlockParity = getParity(currentBlock);
         if ((currentBlockParity == 0) && (getTotalParity(currentBlock) == 1)) { // if there is an error at position zero (total parity)
-            blockDisplayBin(currentBlock);
-            printf("1 error found in block %d, in position 0\n", currentBlock.blockNo);
-            printf("Correcting error...\n");
             flipBit(&currentBlock.bits, currentBlockParity);
-            printf("Error bit corrected! Parity of block is now %d\n", getParity(currentBlock));
-            numErrors++;
+            num1Errors++;
         }
         else if (currentBlockParity && (getTotalParity(currentBlock) == 0)) { // there is two errors in the block
-            // if the parity of the whole block is even, then two bits got flipped in a single block.
-                blockDisplayBin(currentBlock);
+                // if the parity of the whole block is even, AND the current block parity is non-zero then two bits got flipped in a single block.
                 // Note, cases with 3 or more errors per block is not covered by hamming codes
-                printf("There is two errors in block %d - cannot correct for them both\n", currentBlock.blockNo);
-                numErrors += 2;
+                num2Errors += 1;
         }
         else if (currentBlockParity && (getTotalParity(currentBlock) == 1)) { // there is one error in the block
-                blockDisplayBin(currentBlock);
-                printf("1 error found in block %d, in position %d\n", currentBlock.blockNo, currentBlockParity);
-                printf("Correcting error...\n");
                 flipBit(&currentBlock.bits, currentBlockParity);
-                printf("Error bit corrected! Parity of block is now %d\n", getParity(currentBlock));
-                numErrors++;
+                num1Errors++;
         }
     }
 
-    if (numErrors == 0) {
+    if (num1Errors == 0) {
         printf("\nThere are no errrors!!\n");
+    }
+    else {
+        printf("Found a total of %d errors in the file.\nA total of %d errors were corrected\n", (num1Errors+2*num2Errors), num1Errors);
     }
 
     // write the corrected blocks back to the file
@@ -207,7 +288,6 @@ void writeBlocksToFile(struct smallBlock blocks[], int numBlocks, char filename[
         return;
     }
     int numDataBits = numBlocks * 11;
-    printf("NUMDATABITS %d\n", numDataBits);
     byte dataPositions[11] = {3, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15};
     for (int i = 0; i < numDataBits;) {
         byte dataByte = 0;
@@ -217,7 +297,6 @@ void writeBlocksToFile(struct smallBlock blocks[], int numBlocks, char filename[
             i++;
         }
         fwrite(&dataByte, sizeof(byte), 1, fp);
-
     }
 
     printf("Blocks written to file %s\n", newFilename);
@@ -315,6 +394,7 @@ void introduceError(int length, char hexFilename[], int bitIndex) {
 }
 
 int openingSequence() {
+    system("cls"); // clear the screen
     // print the hammingCodesTitleAscii.txt to screen
 
     FILE* fp = fopen("hammingCodesTitleAscii.txt", "r");
@@ -323,23 +403,24 @@ int openingSequence() {
     }
     char c;
     while ((c = fgetc(fp)) != EOF) {
-        printf("%c", c);
+        printf(BHWHT "%c", c); // bold white text
     }
+    printf(reset);
     fclose(fp);
 
     /// print the opening instructions
-    printf("\nThis is an program to demonstrate how Hamming Codes can be used to encode data and make it resilient to errors - a self-correcting message\n");
-    printf("This is a common problem in data transmission and storage, and similar systems are used today.\n\n");
+    printf(BHWHT "\nThis is an program to demonstrate how Hamming Codes can be used to encode data and make it resilient to errors - a self-correcting message\n");
+    printf("This is a common problem in data transmission and storage, and similar systems are used today.\n\n" reset);
 
     printf("The capabilities of this program are:\n");
-    printf("\t1.Walk through the process of encoding and decoding data using Hamming codes, for educational purposes (recommended for first try)\n");
-    printf("\t2 Quickly encode and decode text using Hamming Codes. Interlacing blocks is used for resilience against burst errors\n");
-    printf("\t\t2.1. Quickly encode text data and save the encoded data\n");
+    printf(CYN"\t1. Walk through the process of encoding and decoding data using Hamming codes, for educational purposes (recommended for first try)\n");
+    printf("\t2. Quickly encode and decode data using Hamming Codes. Interlacing blocks is used for resilience against burst errors:\n");
+    printf("\t\t2.1. Quickly encode data and save the encoded data\n");
     printf("\t\t2.2. Introduce a single or burst error to the encoded data to simulate bit flips in an actual transmission / storage system.\n");
-    printf("\t\t2.3. Quickly detect and correct errors in data and decode it\n");
+    printf("\t\t2.3. Quickly detect and correct errors in data and decode it\n" reset);
 
 
-    printf("Please select an option to start: (1,2)\n");
+    printf("Please select an option to start: (1 or 2)\n");
     int option = 0;
     while (!(option== 1 || option == 2)) {
         scanf("%d", &option);
@@ -357,7 +438,126 @@ int findFileSize(FILE* fp) {
 
 void option1() {
     // educational walk through of encoding and decoding data using Hamming Codes
-    // TODO: get coloured output working for the educational walk through
+    printf("\n\n"BHBLU"Educational walk through of encoding and decoding data using Hamming Codes" reset ": \n");
+    printf(BHWHT "Hamming Codes"  reset " are a way of encoding data to make it resilient to errors.\n");
+    printf("Data can get" BWHT " corrupted" reset " during transmission or storage, (Through electromagnetic interference, scratches on the disk etc) which is obviously a problem, if you like your data intact.\n");
+    printf("This is where Hamming Codes come in. Hamming encoding can find single bit errors by adding parity bits in specific places in memory\n");
+    printf("Reminder: Parity is the state of being even or odd, and in the case of data, the parity is EVEN (0) if there is an even number of 1's in a given set of data, and ODD (1) if there is an odd number of 1's in a given set of data.\n\n");
+    printf("For the purpose of this educational walk though, please provide a word or phrase to encode: (<50 characters)\n");
+
+    char phrase[50];
+    getchar(); // get rid of newline character
+    gets(phrase);
+
+
+    printf(BHBLU"\n\nThe process of encoding data using Hamming Codes is as follows:\n");
+    printf(BHGRN"\t1. Choose a block size that is\n"
+           "\t\t a) a power of 2 and\n"
+           "\t\t b) small enough such that the likelihood of multiple errors in a single block is low but as large as possible to increase memory efficiency.\n" reset);
+    printf("\t   For simplicity, we will use a block size of 16 (11 data bits and 5 parity bits)\n\n");
+
+    printf(BHGRN"\t2. Split the data into chunks of (block size - log_2(block size) -1)   (11 in this case)\n" reset);
+    printf("\t   For the phrase you provided, "BHYEL "(\" %s \")" reset", the binary data is coloured in BLUE (below, MSB first)\n\n", phrase);
+    printf(BHGRN"\t3. Arrange these chunks into blocks of size (block size) (16 in our case) arranging them in indexes that are not powers of 2 and not zero \n"reset);
+    int numBlocks = calcNumOfBlocks(phrase, 0);
+    struct smallBlock* blocks;
+    int wasOddNumBlocks = numBlocks % 2;
+    if (numBlocks%2){
+        numBlocks++;
+        // malloc can't initialise odd number of blocks?????????? - very weird behaviour
+    }
+    blocks = (struct smallBlock*) malloc(numBlocks * sizeof(struct smallBlock)); /// have to use malloc() because cannot declare an array of structs that is that large
+    (wasOddNumBlocks) ? numBlocks-- : 0;  // we only set it to even so that malloc would work.
+
+    hammingEncodeFast(phrase, blocks, 0); // encode the message
+    blockDisplayMultipleBin(blocks, numBlocks, dataColoured);
+    printf("For reference later: The indexes of the bits in the block in binary:\n");
+    printf("0000  0001  0010  0011\n0100  0101  0110  0111\n1000  1001  1010  1011\n1100  1101  1110  1111\n\n");
+
+    printf("Press enter to continue\n");
+    getchar();
+
+    printf(BHGRN"\t4. Find the parity bits. There are log_2(block size) (4 in our case) \"parity groups\" of numbers plus an overall parity bit:\n"reset);
+    printf("\t   Let's take a look at the first block. \n");
+    printf("The first parity group is: (Note how all indexes have having binary 1 in the LSB (0001, 0011, 0101, 0111, 1001, 1011, 1101, 1111) )\n");
+    blockDisplayBin(blocks[0], parityGroup1Coloured);
+    printf("The job of the parity bit is to make the parity of the group EVEN, so in this case, it's set to %d\n\n", getBit(blocks[0].bits, 1));
+    printf("The second parity group is: (Note how all the indexes have binary 1 in the second digit (0010, 0011, 0110, 0111, 1010, 1011, 1110, 1111) )\n");
+    blockDisplayBin(blocks[0], parityGroup2Coloured);
+    printf("The job of the parity bit is to make the parity of the group EVEN, so in this case, it's set to %d\n\n", getBit(blocks[0].bits, 2));
+    printf("The third parity group is: (Note how all the indexes have binary 1 in the third digit (0100, 0101, 0110, 0111, 1100, 1101, 1110, 1111) )\n");
+    blockDisplayBin(blocks[0], parityGroup3Coloured);
+    printf("The job of the parity bit is to make the parity of the group EVEN, so in this case, it's set to %d\n\n", getBit(blocks[0].bits, 4));
+    printf("The fourth parity group: (Note how all the indexes have binary 1 in the fourth digit (1000, 1001, 1010, 1011, 1100, 1101, 1110, 1111) )\n");
+    blockDisplayBin(blocks[0], parityGroup4Coloured);
+    printf("The job of the parity bit is to make the parity of the group EVEN, so in this case, it's set to %d\n\n", getBit(blocks[0].bits, 8));
+    printf("The overall parity bit is: ");
+    blockDisplayBin(blocks[0], totalParityColoured);
+    printf("The job of this parity bit is to make the parity of the ENTIRE block EVEN, so in this case, it's set to %d\n\n", getBit(blocks[0].bits, 0));
+
+    printf("Press enter to continue\n");
+    getchar();
+
+    printf("Because the bits are arranged in this manner, we can use a single operation to find the parity bits. The XOR (^) function.\n");
+    printf("If the indexes all of the bits that are 1 in a certain block are XORed together, the result will give us the parity bits, in this case: %d%d%d%d\n",
+           getBit(blocks[0].bits, 1), getBit(blocks[0].bits, 2), getBit(blocks[0].bits, 4), getBit(blocks[0].bits, 8));
+    printf("The \"Total parity\" bit is the XOR of all the indexes of bits in the block that are 1.\n\n");
+
+    printf("Press enter to continue\n");
+    getchar();
+
+
+    printf(BHGRN"\t5. Interlacing the blocks\n"reset);
+    printf("\t   Now that we have the blocks encoded, we can interlace them to make them resilient to burst errors.\n");
+    printf("\t   Interlacing is the process of ordering all the blocks such that their data is spread across the whole file instead of being bunched up together:\n");
+    printf("\t   The bits look like this after interlacing, with each colour representing the nth bit from a different block:\n");
+
+    char* interlaceCols[6] = {REDB, GRNB, YELB, MAGB, CYNB};
+    printf("\t\t");
+    for (int i=0;i<5;i++) {
+        printf(interlaceCols[i%numBlocks]);
+        printf("%d", getBit(blocks[i%numBlocks].bits, i%numBlocks));
+    }
+    printf(reset "..." BLK "_\n" reset);
+
+    printf("The Blocks are now encoded using hamming encoding and ready for transmission / storage\n\n");
+    printf("Press enter to continue\n");
+    getchar();
+
+
+
+    // decode the message
+    printf(BHBLU"\n\nThe process of decoding data using Hamming Codes is as follows:\n"reset);
+    printf(BHGRN"\t1. De-lacing the blocks. This is simply rearranging the bits such that they are in the same order they are in before interlacing.\n"reset);
+    printf(BHGRN"\t2. Decoding the blocks. The parity bits are now used to check the data. We can obtain the parity of the whole block again to find out if there is an error.\n"reset);
+    printf("\t   If there is only one error, then the total parity will be odd the parity of the whole block will point to the position of the error.\n");
+    printf("\t   If there are two errors, then the total parity will be even and the parity of the whole block will be NON-ZERO, but we will not be able to locate the error\n");
+    printf("\t   If there are three errors or more, Hamming encoding fails.\n\n");
+    printf("\t   For example: if the 5th bit is flipped...\n");
+    blockDisplayBin(blocks[0], parityVsDataColoured);
+    printf("\t   flipping bit...\n");
+    short data = blocks[0].bits;
+    flipBit(&data, 5);
+    blocks[0].bits = data;
+
+    blockDisplayBin(blocks[0], parityVsDataColoured);
+    printf("\t   After flipping the 5th bit of the first block, the parity of the block is: %d%d%d%d\n",
+           getBit(getParity(blocks[0]), 3), getBit(getParity(blocks[0]), 2), getBit(getParity(blocks[0]), 1), getBit(getParity(blocks[0]), 0));
+
+    printf("\t   And the total parity is %d\n", getTotalParity(blocks[0]));
+    printf("\t   The parity tells is the exact location of the error because we can see it IS in the FIRST parity group, NOT in the Second parity group, IS in the third parity group, and is NOT in the fourth parity group.\n"
+           "The only bit that satisfies all 4 of those criteria is the 5th bit:\n");
+    printf("\t   Correcting this error:\n");
+    flipBit(&data, 5);
+    blocks[0].bits = data;
+    blockDisplayBin(blocks[0], parityVsDataColoured);
+    printf("\t   If we flip the 5th bit again, the parity of the block is: %d\n",
+           getParity(blocks[0]));
+    printf("\t   And the total parity is %d\n", getTotalParity(blocks[0]));
+
+
+
+    free(blocks);
 }
 
 void option2() {
@@ -377,7 +577,7 @@ void option2() {
     if (messageOrFile==1) {
         // getting user input
         printf("Please enter the message you would like to encode: (Max length is %d characters)\n", MAX_MESSAGE_SIZE);
-        getchar(); // get rid of newline character
+        getchar(); // gets rid of newline character
         gets(message);
 
         printf("message is %d characters long\n", strlen(message));
@@ -385,7 +585,7 @@ void option2() {
     }
     else {
         printf("Please make sure the file you want to encode is in the same directory as this program\n");
-        printf("Please enter the name of the file you would like to encode ( with file extension e.g. .txt, jpeg, .mp3) Max file size is %d\n", MAX_MESSAGE_SIZE);
+        printf("Please enter the name of the file you would like to encode ( with file extension e.g. .txt, jpeg, .mp3) Max file size is %d bytes\n", MAX_MESSAGE_SIZE);
         scanf("%s", originalFileName);
         FILE* fp = fopen(originalFileName, "rb");
         if (fp == NULL) {
@@ -418,8 +618,8 @@ void option2() {
 
     hammingEncodeFast(message, blocks, numBytes); // encode the message
 
-    printf("ENCODED MESSAGE:\n");
-    blockDisplayMultipleBin(blocks, (numBlocks>=10) ? 10 : numBlocks ); // only print 10 blocks max
+//    printf("ENCODED MESSAGE:\n");
+//    blockDisplayMultipleBin(blocks, (numBlocks>=10) ? 10 : numBlocks ); // only print 10 blocks max
 
     char hexFilename[100];
     writeBlocksToFileAndInterlace(blocks, numBlocks, hexFilename); // generates the filename, interlaces the blocks and saves to file
@@ -427,7 +627,7 @@ void option2() {
 
 // 2.2 Introduce a single or burst error to the encoded data to simulate bit flips in an actual transmission / storage system.
     printf("\nSimulating error \n");
-    int maxBitIndex = numBlocks * 8 * sizeof(short );
+    int maxBitIndex = numBlocks * 8 * sizeof(short) - (numBlocks);
     int bitIndex = -1;
     int length = 0;
     while ((bitIndex < 0) || (bitIndex > maxBitIndex)) {
@@ -439,8 +639,7 @@ void option2() {
         scanf("%d", &length);
         if ((length <= 0) || (length > numBlocks)) {
             printf("The length must be more than 0 and less than the number of blocks\n");
-            printf("If the length of the burst error is more than the number of blocks (with interlacing), there will be more than two errors per block, which hamming codes can detect, but not correct for.\n");
-
+            printf("If the length of the burst error is more than the number of blocks (with interlacing), there will be at least two errors per block, which hamming encoding can detect (up to two per block), but not correct for.\n");
         }
 
     }
@@ -451,16 +650,30 @@ void option2() {
 }
 
 int main() {
+    byte rerun = 1;
 
-    int option = openingSequence();
-    switch (option) {
-        case 1:
-            option1();
-            break;
-        case 2:
-            option2();
-            break;
+    while (rerun) {
+        int option = openingSequence();
+
+        switch (option) {
+            case 1:
+                option1();
+                break;
+            case 2:
+                option2();
+                break;
+            default:
+                printf("Invalid option\n"); // should never happen
+                break;
+        }
+        printf("\nWould you like to re-run the program? (y/n)\n");
+        char answer;
+        scanf(" %c", &answer);
+        if ((answer != 'y') && (answer != 'Y')) {
+            rerun = 0; // exit the loop
+        }
     }
-    while (1); // TODO implement a repeat option and exit option.
+    return 0;
+
 }
 
