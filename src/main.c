@@ -35,9 +35,24 @@ enum blockDisplayStates { // makes the code easier to read, instead of using num
 
 /// Prototypes
 // TODO: ADD prototypes at end
-int findFileSize(FILE* fp);
-void readBlocksFromFileAndDelace(struct smallBlock blocks[], int numBlocks, char* filename);
+byte getBit(short bits, int bitIndex);
+void setBit(short *bits, int bitIndex, int val);
+void flipBit(short *bits, int bitIndex);
+int calcNumOfBlocks(byte data[], int numBytes);
+void blockDisplayBin (struct smallBlock block, enum blockDisplayStates blockDisplayState);
+void blockDisplayMultipleBin (struct smallBlock blocks[], int numBlocks, enum blockDisplayStates blockDisplayState);
+int getParity(struct smallBlock block);
+int getTotalParity(struct smallBlock block);
+void hammingEncodeFast(byte message[], struct smallBlock blocks[], int numBytes);
+void hammingDecodeFast(char hexFilename[], char originalFilename[]);
 void writeBlocksToFile(struct smallBlock blocks[], int numBlocks, char filename[]);
+void writeBlocksToFileAndInterlace(struct smallBlock blocks[], int numBlocks, char fileName[]);
+void readBlocksFromFileAndDelace(struct smallBlock blocks[], int numBlocks, char* filename);
+void introduceError(int length, char hexFilename[], int bitIndex);
+int openingSequence();
+int findFileSize(FILE* fp);
+void option1();
+void option2();
 
 byte getBit(short bits, int bitIndex) {
     return (bits & (1 << (bitIndex))) ? 1 : 0;
@@ -674,6 +689,4 @@ int main() {
         }
     }
     return 0;
-
 }
-
