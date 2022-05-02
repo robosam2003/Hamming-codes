@@ -12,7 +12,7 @@
  *              any errors (when possible).
  *
  *
- * Required files: hammingCodesTitleAscii.txt
+ * Required files: hammingCodesTitleAscii.txt, colours.h
  * Files used for as examples (for encoding and decoding): arcade.mp3, arrival.jpg, attractor1.jpg, attractor2.png, dunkirk.png, thrust.mp4, hammingCodesTitleAscii.txt
  *
  *
