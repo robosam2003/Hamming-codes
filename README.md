@@ -14,16 +14,5 @@ Must use:
 - Must be sufficiently Complex
 - Must be efficient (function, etc)
 
-## Ideas:
-- From 3Blue1Brown 
-  - Wordle and automatic wordle solver 
-  - fourier series of an image.
-  - Hamming codes and compression ??
-  - Neural net for recognising numbers, letters etc
- 
-- From Reducible
-  - Signal processing - JPEG, PNG, etc 
 
-
-- Generating Lorentz attractors
-- ASCII camera
+TODO: Make public at some point when 
