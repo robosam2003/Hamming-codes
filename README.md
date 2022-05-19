@@ -12,7 +12,7 @@ It achieves this by splitting the data into blocks, and then adding several pari
 
 The program also interlaces the bits of the blocks to make the data resilient to burst errors (common for scratches on disks etc.).
 The interlaced blocks are saved to an intermediate file with a unique filename.
-In the case where the length of the burst error is shorter than the size of the block of data (16 bits in our case), the program is able to correct *every single error* (below), sometimes up to hundreds of thousands of bits.
+In the case where the length of the burst error is shorter than numbers of blocks, the program is able to correct *every single error* (below), sometimes up to hundreds of thousands of bits.
 
 Otherwise, it will detect two bit errors, but it does not have enough data to correct them. 
 
