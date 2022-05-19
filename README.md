@@ -17,7 +17,6 @@ In the case where the length of the burst error is shorter than numbers of block
 Otherwise, it will detect two bit errors, but it does not have enough data to correct them. 
 
 <img src = https://github.com/robosam2003/Hamming_codes/blob/master/resources/errorCorrectionSuccess.jpg>
-If all errors 
 
 For a more detailed walkthrough of how Hamming codes work, run the educational walkthrough (option 1) or check out the videos by 3Blue1Brown:
 - [How to send a self-correcting message (Hamming codes)](https://www.youtube.com/watch?v=X8jsijhllIA&t=681s)
